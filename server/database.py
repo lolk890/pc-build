@@ -1,11 +1,14 @@
+import os
 import sqlite3
 import json
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "pcbuild.db"
+# Путь к файлу базы берётся из переменной окружения DB_PATH (на хостинге), иначе – рядом с кодом
+DB_PATH = Path(os.environ.get("DB_PATH", Path(__file__).parent / "pcbuild.db"))
 
 
 def init_database():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 

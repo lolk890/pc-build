@@ -1,14 +1,50 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import bcrypt
-import sqlite3
 import json
+import os
+import sqlite3
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "pcbuild.db"
+import bcrypt
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-app = FastAPI(title="PC Build API")
+from database import DB_PATH, init_database, seed_products
+
+WEB_DIR = Path(__file__).parent.parent / "web"
+
+# Тестовая учётная запись для проверки (значения можно переопределить переменными окружения)
+DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "testuser")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "test123")
+
+
+def ensure_demo_user(conn):
+    """Создаёт тестового пользователя, если его ещё нет. В базу пишется только хеш пароля."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE username = ?", (DEMO_USERNAME,))
+    if cursor.fetchone():
+        return
+    hashed = bcrypt.hashpw(DEMO_PASSWORD.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    cursor.execute(
+        "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
+        (DEMO_USERNAME, f"{DEMO_USERNAME}@example.com", hashed),
+    )
+    conn.commit()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # На чистой машине и на бесплатном хостинге (диск обнуляется при перезапуске)
+    # база создаётся и заполняется автоматически
+    conn = init_database()
+    seed_products(conn)
+    ensure_demo_user(conn)
+    conn.close()
+    yield
+
+
+app = FastAPI(title="PC Build API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -218,6 +254,17 @@ def get_my_orders(user_id: int):
     return list(orders_dict.values())
 
 
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+
+# Страницы сайта отдаём с того же адреса, что и API. Монтируем последним,
+# чтобы маршруты /api/... имели приоритет.
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

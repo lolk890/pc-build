@@ -1,0 +1,15 @@
+# Blueprint для Render: сервис можно создать и вручную через сайт, этот файл – то же самое в виде кода
+services:
+  - type: web
+    name: pcbuild
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DB_PATH
+        value: /app/data/pcbuild.db
+      - key: DEMO_USERNAME
+        value: testuser
+      - key: DEMO_PASSWORD
+        value: test123
